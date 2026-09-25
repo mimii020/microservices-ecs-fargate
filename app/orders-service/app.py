@@ -2,10 +2,10 @@ import os
 import uuid
 
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, Blueprint, request, jsonify
 
 app = Flask(__name__)
-
+orders = Blueprint("orders", __name__)
 ORDERS = {}
 
 AUTH_SERVICE_URL = os.environ.get("AUTH_SERVICE_URL", "http://localhost:5000")
@@ -16,7 +16,7 @@ def get_authenticated_user():
     auth_header = request.headers.get("Authorization", "")
     try:
         resp = requests.get(
-            f"{AUTH_SERVICE_URL}/verify",
+            f"{AUTH_SERVICE_URL}/auth/verify",
             headers={"Authorization": auth_header},
             timeout=3,
         )
@@ -33,7 +33,7 @@ def health():
     return jsonify(status="ok", service="orders"), 200
 
 
-@app.route("/orders", methods=["POST"])
+@orders.route("/", methods=["POST"])
 def create_order():
     username = get_authenticated_user()
     if not username:
@@ -57,7 +57,7 @@ def create_order():
     return jsonify(ORDERS[order_id]), 201
 
 
-@app.route("/orders", methods=["GET"])
+@orders.route("/", methods=["GET"])
 def list_orders():
     username = get_authenticated_user()
     if not username:
@@ -67,7 +67,7 @@ def list_orders():
     return jsonify(orders=mine), 200
 
 
-@app.route("/orders/<order_id>", methods=["GET"])
+@orders.route("/<order_id>", methods=["GET"])
 def get_order(order_id):
     username = get_authenticated_user()
     if not username:
@@ -79,6 +79,7 @@ def get_order(order_id):
 
     return jsonify(order), 200
 
+app.register_blueprint(orders, url_prefix="/orders")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))

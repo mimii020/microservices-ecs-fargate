@@ -1,0 +1,50 @@
+resource "aws_ecs_task_definition" "auth-orders-tasks" {
+  for_each = var.services
+  family = "${each.key}-service"
+  network_mode = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu = 256
+  memory = 512
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  tags = {
+    Name = "${var.project}-${each.key}-task"
+  }
+  container_definitions = jsonencode([
+    {
+      name      = "${each.key}-service"
+      image     = "${local.ecr_registry_path}/${each.key}-service:latest"
+      essential = true
+      portMappings = [
+        {
+          containerPort = each.value.port
+        }
+      ]
+    }
+  ])
+}
+
+resource "aws_ecs_cluster" "ecs-cluster" {
+  name = var.project
+}
+
+resource "aws_ecs_service" "auth-orders-services" {
+  for_each = var.services
+  name = each.key
+  cluster = aws_ecs_cluster.ecs-cluster.id
+  task_definition = aws_ecs_task_definition.auth-orders-tasks[each.key].arn
+  desired_count = 2
+  launch_type = "FARGATE"
+  depends_on = [aws_lb_listener_rule.services-rules]
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.tgs[each.key].arn
+    container_name   = "${each.key}-service"
+    container_port   = each.value.port
+  }
+
+  network_configuration {
+    assign_public_ip = false
+    security_groups = [aws_security_group.auth_orders_task_sgs[each.key].id]
+    subnets = [for subnet in values(aws_subnet.microservices-ecs-private-subnets) : subnet.id]
+  }
+}

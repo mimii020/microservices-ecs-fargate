@@ -3,9 +3,10 @@ import uuid
 import hashlib
 from datetime import datetime, timedelta
 
-from flask import Flask, request, jsonify
+from flask import Flask, Blueprint, request, jsonify
 
 app = Flask(__name__)
+auth = Blueprint("auth", __name__)
 
 USERS = {}
 TOKENS = {}
@@ -22,7 +23,7 @@ def health():
     return jsonify(status="ok", service="auth"), 200
 
 
-@app.route("/register", methods=["POST"])
+@auth.route("/register", methods=["POST"])
 def register():
     data = request.get_json(force=True)
     username = data.get("username")
@@ -37,7 +38,7 @@ def register():
     return jsonify(message="user registered", username=username), 201
 
 
-@app.route("/login", methods=["POST"])
+@auth.route("/login", methods=["POST"])
 def login():
     data = request.get_json(force=True)
     username = data.get("username")
@@ -54,7 +55,7 @@ def login():
     return jsonify(token=token, expires_in_minutes=TOKEN_TTL_MINUTES), 200
 
 
-@app.route("/verify", methods=["GET"])
+@auth.route("/verify", methods=["GET"])
 def verify():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     entry = TOKENS.get(token)
@@ -64,6 +65,7 @@ def verify():
 
     return jsonify(valid=True, username=entry["username"]), 200
 
+app.register_blueprint(auth, url_prefix="/auth/")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
