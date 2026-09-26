@@ -12,7 +12,7 @@ resource "aws_lb" "alb" {
 
 resource "aws_lb_target_group" "tgs" {
   for_each = var.services
-  name     = "alb-${each.key}-tg"
+  name     = "${each.key}-tg"
   target_type = "ip"
   port     = each.value.port
   protocol = "HTTP"
@@ -28,7 +28,7 @@ resource "aws_lb_target_group" "tgs" {
   }
 }
 
-resource "aws_lb_listener" "alb-listener" {
+resource "aws_lb_listener" "alb_listener" {
   load_balancer_arn = aws_lb.alb.arn
   port              = 80
   protocol          = "HTTP"
@@ -43,9 +43,10 @@ resource "aws_lb_listener" "alb-listener" {
   }
 }
 
-resource "aws_lb_listener_rule" "service" {
+resource "aws_lb_listener_rule" "services_rules" {
   for_each     = var.services
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.alb_listener.arn
+  priority = each.value.priority
 
   action {
     type             = "forward"
@@ -54,7 +55,7 @@ resource "aws_lb_listener_rule" "service" {
 
   condition {
     path_pattern {
-      values = ["/${each.key}/*"]
+      values = ["/${each.key}", "/${each.key}/*"]
     }
   }
 }
