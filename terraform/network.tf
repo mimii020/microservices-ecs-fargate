@@ -173,3 +173,12 @@ resource "aws_vpc_security_group_egress_rule" "allow_orders_to_auth" {
   from_port = 5000
   to_port = 5000
 }
+
+resource "aws_vpc_security_group_egress_rule" "tasks_to_db" {
+  for_each = var.services
+  security_group_id            = aws_security_group.auth_orders_task_sgs[each.key].id
+  referenced_security_group_id = aws_security_group.rds-sg.id
+  from_port                    = 5432
+  ip_protocol                  = "tcp"
+  to_port                      = 5432
+}

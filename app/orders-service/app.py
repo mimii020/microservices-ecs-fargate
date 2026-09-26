@@ -1,12 +1,22 @@
 import os
-import uuid
 
 import requests
 from flask import Flask, Blueprint, request, jsonify
 
+from models import db, Order
+
 app = Flask(__name__)
 orders = Blueprint("orders", __name__)
-ORDERS = {}
+
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    f"postgresql://{os.environ['DB_USERNAME']}:{os.environ['DB_PASSWORD']}"
+    f"@{os.environ['DB_HOST']}:{os.environ['DB_PORT']}/{os.environ['DB_NAME']}"
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
+
+with app.app_context():
+    db.create_all()
 
 AUTH_SERVICE_URL = os.environ.get("AUTH_SERVICE_URL", "http://localhost:5000")
 
@@ -28,6 +38,16 @@ def get_authenticated_user():
     return resp.json().get("username")
 
 
+def order_to_dict(order: Order) -> dict:
+    return {
+        "id": order.order_id,
+        "owner": order.owner_username,
+        "item": order.item,
+        "quantity": order.quantity,
+        "status": order.status,
+    }
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify(status="ok", service="orders"), 200
@@ -45,16 +65,14 @@ def create_order():
 
     if not item:
         return jsonify(error="item is required"), 400
+    if not isinstance(quantity, int) or quantity <= 0:
+        return jsonify(error="quantity must be a positive integer"), 400
 
-    order_id = str(uuid.uuid4())
-    ORDERS[order_id] = {
-        "id": order_id,
-        "owner": username,
-        "item": item,
-        "quantity": quantity,
-        "status": "created",
-    }
-    return jsonify(ORDERS[order_id]), 201
+    order = Order(owner_username=username, item=item, quantity=quantity)
+    db.session.add(order)
+    db.session.commit()
+
+    return jsonify(order_to_dict(order)), 201
 
 
 @orders.route("/", methods=["GET"])
@@ -63,8 +81,8 @@ def list_orders():
     if not username:
         return jsonify(error="unauthorized"), 401
 
-    mine = [o for o in ORDERS.values() if o["owner"] == username]
-    return jsonify(orders=mine), 200
+    mine = Order.query.filter_by(owner_username=username).all()
+    return jsonify(orders=[order_to_dict(o) for o in mine]), 200
 
 
 @orders.route("/<order_id>", methods=["GET"])
@@ -73,11 +91,12 @@ def get_order(order_id):
     if not username:
         return jsonify(error="unauthorized"), 401
 
-    order = ORDERS.get(order_id)
-    if not order or order["owner"] != username:
+    order = Order.query.filter_by(order_id=order_id, owner_username=username).first()
+    if not order:
         return jsonify(error="order not found"), 404
 
-    return jsonify(order), 200
+    return jsonify(order_to_dict(order)), 200
+
 
 app.register_blueprint(orders, url_prefix="/orders")
 

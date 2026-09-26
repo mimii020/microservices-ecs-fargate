@@ -14,6 +14,13 @@ resource "aws_ecs_task_definition" "auth-orders-tasks" {
       name      = "${each.key}-service"
       image     = "${local.ecr_registry_path}/${each.key}-service:latest"
       essential = true
+      secrets = [
+        { name = "DB_USERNAME", valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:username::" },
+        { name = "DB_PASSWORD", valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:password::" },
+        { name = "DB_HOST",     valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:host::" },
+        { name = "DB_PORT",     valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:port::" },
+        { name = "DB_NAME",     valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:db_name::" },
+      ]
       portMappings = [
         {
           containerPort = each.value.port

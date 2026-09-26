@@ -9,3 +9,5 @@ locals {
 locals {
   ecr_registry_path = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com"
 }
+
+locals { db_username = "dbadmin" }
