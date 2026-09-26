@@ -14,6 +14,10 @@ resource "aws_ecs_task_definition" "auth-orders-tasks" {
       name      = "${each.key}-service"
       image     = "${local.ecr_registry_path}/${each.key}-service:latest"
       essential = true
+      environment = each.key == "auth" ? [
+        { name = "REDIS_HOST", value = aws_elasticache_cluster.elasticcache_cluster.cache_nodes[0].address },
+        { name = "REDIS_PORT", value = "6379" }
+      ] : []
       secrets = [
         { name = "DB_USERNAME", valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:username::" },
         { name = "DB_PASSWORD", valueFrom = "${aws_secretsmanager_secret.db_secret.arn}:password::" },
@@ -41,7 +45,7 @@ resource "aws_ecs_service" "auth-orders-services" {
   task_definition = aws_ecs_task_definition.auth-orders-tasks[each.key].arn
   desired_count = 2
   launch_type = "FARGATE"
-  depends_on = [aws_lb_listener_rule.services-rules]
+  depends_on = [aws_lb_listener_rule.services_rules]
 
   load_balancer {
     target_group_arn = aws_lb_target_group.tgs[each.key].arn

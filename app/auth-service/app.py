@@ -1,8 +1,8 @@
 import os
 import uuid
 import hashlib
-from datetime import datetime, timedelta
 
+import redis
 from flask import Flask, Blueprint, request, jsonify
 
 from models import db, User
@@ -20,8 +20,13 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-TOKENS = {}
-TOKEN_TTL_MINUTES = 60
+redis_client = redis.Redis(
+    host=os.environ["REDIS_HOST"],
+    port=int(os.environ.get("REDIS_PORT", "6379")),
+    decode_responses=True,
+)
+
+TOKEN_TTL_SECONDS = 60 * 60
 
 
 def hash_password(password: str) -> str:
@@ -63,21 +68,20 @@ def login():
         return jsonify(error="invalid credentials"), 401
 
     token = str(uuid.uuid4())
-    TOKENS[token] = {
-        "username": username,
-        "expires": datetime.utcnow() + timedelta(minutes=TOKEN_TTL_MINUTES),
-    }
-    return jsonify(token=token, expires_in_minutes=TOKEN_TTL_MINUTES), 200
+    redis_client.setex(f"token:{token}", TOKEN_TTL_SECONDS, username)
+
+    return jsonify(token=token, expires_in_minutes=TOKEN_TTL_SECONDS // 60), 200
 
 
 @auth.route("/verify", methods=["GET"])
 def verify():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    entry = TOKENS.get(token)
+    username = redis_client.get(f"token:{token}")
 
-    if not entry or entry["expires"] < datetime.utcnow():
+    if not username:
         return jsonify(valid=False), 401
-    return jsonify(valid=True, username=entry["username"]), 200
+
+    return jsonify(valid=True, username=username), 200
 
 
 app.register_blueprint(auth, url_prefix="/auth")
