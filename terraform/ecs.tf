@@ -26,6 +26,15 @@ resource "aws_ecs_task_definition" "auth-orders-tasks" {
           containerPort = each.value.port
         }
       ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.auth_orders_log_group[each.key].name
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" =  "${var.project}/${each.key}-service"
+        }
+      }
     }
   ])
 }
