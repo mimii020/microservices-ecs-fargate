@@ -6,6 +6,7 @@ resource "aws_ecs_task_definition" "auth-orders-tasks" {
   cpu = 256
   memory = 512
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  depends_on = [aws_secretsmanager_secret_version.db_secret_version]
   tags = {
     Name = "${var.project}-${each.key}-task"
   }
@@ -50,7 +51,10 @@ resource "aws_ecs_service" "auth-orders-services" {
   task_definition = aws_ecs_task_definition.auth-orders-tasks[each.key].arn
   desired_count = 1
   launch_type = "FARGATE"
-  depends_on = [aws_lb_listener_rule.services_rules]
+  depends_on = [
+    aws_lb_listener_rule.services_rules,
+    aws_secretsmanager_secret_version.db_secret_version,
+  ]
 
   deployment_maximum_percent         = 100
   deployment_minimum_healthy_percent = 0
