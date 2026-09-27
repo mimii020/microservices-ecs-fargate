@@ -18,8 +18,9 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-AUTH_SERVICE_URL = os.environ.get("AUTH_SERVICE_URL", "http://localhost:5000")
-
+AUTH_SERVICE_URL = os.environ.get(
+    "AUTH_SERVICE_URL", "http://auth.internal.microservices-ecs-fargate.local:5000"
+)
 
 def get_authenticated_user():
     """Calls the auth service to validate the bearer token on this request."""

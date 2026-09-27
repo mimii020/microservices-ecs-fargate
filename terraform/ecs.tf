@@ -51,6 +51,11 @@ resource "aws_ecs_service" "auth-orders-services" {
   task_definition = aws_ecs_task_definition.auth-orders-tasks[each.key].arn
   desired_count = 1
   launch_type = "FARGATE"
+
+  service_registries {
+    registry_arn = aws_service_discovery_service.services[each.key].arn
+  }
+  
   depends_on = [
     aws_lb_listener_rule.services_rules,
     aws_secretsmanager_secret_version.db_secret_version,
