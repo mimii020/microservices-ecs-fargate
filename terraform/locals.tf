@@ -11,3 +11,12 @@ locals {
 }
 
 locals { db_username = "dbadmin" }
+
+locals {
+  interface_endpoints = {
+    ecr_api        = "ecr.api"
+    ecr_dkr        = "ecr.dkr"
+    secretsmanager = "secretsmanager"
+    logs           = "logs"
+  }
+}
