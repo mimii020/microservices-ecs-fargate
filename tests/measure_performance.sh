@@ -7,7 +7,7 @@ mkdir -p "$(dirname "$OUT")"
 
 section() { printf '\n## %s\n\n' "$1" >> "$OUT"; }
 code()    { printf '```\n' >> "$OUT"; "$@" >> "$OUT" 2>&1 || true; printf '```\n' >> "$OUT"; }
-kv()      { printf '- **%s**: %s\n' "$1" "$2" >> "$OUT"; }
+kv()      { printf -- '- **%s**: %s\n' "$1" "$2" >> "$OUT"; }
 
 # Resolve ALB DNS
 ALB_DNS=$(aws elbv2 describe-load-balancers --names "${PROJECT}-alb" \
