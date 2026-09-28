@@ -10,8 +10,8 @@
 set -uo pipefail
 
 # --- Resolve repo root so relative paths work from any CWD ----------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null \
+  || cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 PROJECT="microservices-ecs-fargate"
@@ -34,7 +34,6 @@ code() {
 }
 
 # Wrapper that returns "HTTP_CODE|TIME_TOTAL" for a curl call.
-# Usage: timed_curl <curl args...>
 timed_curl() {
   curl -o /dev/null -s -w '%{http_code}|%{time_total}' "$@"
 }
@@ -119,7 +118,6 @@ section "End-to-End Functional Test"
 USER="bench_$(date +%s)"
 printf 'Test user: `%s`\n\n' "$USER" >> "$OUT"
 
-# --- Register -------------------------------------------------------------
 result=$(timed_curl -X POST "${BASE}/auth/register" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USER\",\"password\":\"benchpass123\"}")
@@ -127,7 +125,6 @@ code_http="${result%|*}"
 t="${result#*|}"
 kv "Register latency" "${t}s (HTTP ${code_http})"
 
-# --- Login ----------------------------------------------------------------
 result=$(timed_curl -X POST "${BASE}/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USER\",\"password\":\"benchpass123\"}")
@@ -135,7 +132,6 @@ code_http="${result%|*}"
 t="${result#*|}"
 kv "Login latency" "${t}s (HTTP ${code_http})"
 
-# --- Extract token --------------------------------------------------------
 TOKEN=$(curl -s -X POST "${BASE}/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USER\",\"password\":\"benchpass123\"}" | jq -r .token)
@@ -143,7 +139,6 @@ TOKEN=$(curl -s -X POST "${BASE}/auth/login" \
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
   kv "Order tests" "SKIPPED — could not obtain auth token"
 else
-  # --- Create order -------------------------------------------------------
   result=$(timed_curl -X POST "${BASE}/orders/" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
@@ -152,7 +147,6 @@ else
   t="${result#*|}"
   kv "Order creation latency" "${t}s (HTTP ${code_http})"
 
-  # --- List orders --------------------------------------------------------
   result=$(timed_curl "${BASE}/orders/" \
     -H "Authorization: Bearer $TOKEN")
   code_http="${result%|*}"
@@ -186,7 +180,8 @@ for svc in auth orders; do
   start_ms=$(( ($(date +%s) - 3600) * 1000 ))
   count=$(aws logs filter-log-events --log-group-name "$LG" \
     --start-time "$start_ms" --filter-pattern "ERROR" \
-    --query 'length(events)' --output text 2>/dev/null | tr -d '\n' | xargs)
+    --query 'length(events)' --output text 2>/dev/null \
+    | head -1 | tr -dc '0-9')
   kv "$svc ERROR events" "${count:-0}"
 done
 
