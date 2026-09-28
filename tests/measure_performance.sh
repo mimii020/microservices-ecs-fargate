@@ -1,15 +1,47 @@
+#!/usr/bin/env bash
+# app-health.sh — Runtime health, latency, and availability measurements.
+# Concept: What does the deployed system look like from a user's perspective.
+#
+# Usage:   ./scripts/app-health.sh      (from anywhere inside the repo)
+# Output:  <repo-root>/docs/runtime-report.md
+#
+# Requires: aws-cli, curl, jq
+
 set -uo pipefail
+
+# --- Resolve repo root so relative paths work from any CWD ----------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 
 PROJECT="microservices-ecs-fargate"
 REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 OUT="docs/runtime-report.md"
 mkdir -p "$(dirname "$OUT")"
 
+# --- Output helpers -------------------------------------------------------
 section() { printf '\n## %s\n\n' "$1" >> "$OUT"; }
-code()    { printf '```\n' >> "$OUT"; "$@" >> "$OUT" 2>&1 || true; printf '```\n' >> "$OUT"; }
 kv()      { printf -- '- **%s**: %s\n' "$1" "$2" >> "$OUT"; }
 
+code() {
+  local out
+  out=$("$@" 2>&1) || true
+  if [ -n "$out" ] && [ "$out" != "None" ]; then
+    printf '```\n%s\n```\n' "$out" >> "$OUT"
+  else
+    printf '_No results._\n' >> "$OUT"
+  fi
+}
+
+# Wrapper that returns "HTTP_CODE|TIME_TOTAL" for a curl call.
+# Usage: timed_curl <curl args...>
+timed_curl() {
+  curl -o /dev/null -s -w '%{http_code}|%{time_total}' "$@"
+}
+
+# ==========================================================================
 # Resolve ALB DNS
+# ==========================================================================
 ALB_DNS=$(aws elbv2 describe-load-balancers --names "${PROJECT}-alb" \
   --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null)
 BASE="http://${ALB_DNS}"
@@ -18,7 +50,9 @@ BASE="http://${ALB_DNS}"
 {
   printf '# Runtime Health Report\n\n'
   printf 'Generated: %s\n\n' "$(date -u +'%Y-%m-%d %H:%M UTC')"
-  printf 'Endpoint: `%s`\n' "$BASE"
+  printf 'Endpoint: `%s`\n\n' "$BASE"
+  printf '> Measured from AWS CloudShell (same region as the stack, `%s`).\n' "$REGION"
+  printf '> Latency includes intra-region network hops only.\n'
 } >> "$OUT"
 
 if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" = "None" ]; then
@@ -26,13 +60,17 @@ if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" = "None" ]; then
   exit 1
 fi
 
-# --- Task & Service state -------------------------------------------------
+# ==========================================================================
+# ECS Service State
+# ==========================================================================
 section "ECS Service State"
 code aws ecs describe-services --cluster "$PROJECT" --services auth orders \
   --query 'services[*].[serviceName,runningCount,desiredCount,status]' \
   --output table
 
-# --- Target group health --------------------------------------------------
+# ==========================================================================
+# ALB Target Group Health
+# ==========================================================================
 section "ALB Target Group Health"
 for svc in auth orders; do
   TG_ARN=$(aws elbv2 describe-target-groups --names "${svc}-tg" \
@@ -44,56 +82,87 @@ for svc in auth orders; do
     --output table
 done
 
-# --- Health endpoint latency ---------------------------------------------
+# ==========================================================================
+# Health Endpoint Latency (10 requests per service)
+# ==========================================================================
 section "Health Endpoint Latency (10 requests per service)"
 for svc in auth orders; do
   printf '\n### %s\n\n' "$svc" >> "$OUT"
   printf '```\n' >> "$OUT"
   total=0
+  success=0
   for i in $(seq 1 10); do
-    t=$(curl -o /dev/null -s -w '%{time_total}' "${BASE}/${svc}/health")
-    printf 'req %2d: %ss\n' "$i" "$t" >> "$OUT"
-    total=$(awk "BEGIN {print $total + $t}")
+    result=$(timed_curl "${BASE}/${svc}/health")
+    code_http="${result%|*}"
+    t="${result#*|}"
+    printf 'req %2d: HTTP %s  %ss\n' "$i" "$code_http" "$t" >> "$OUT"
+    if [ "$code_http" = "200" ]; then
+      total=$(awk "BEGIN {print $total + $t}")
+      success=$((success + 1))
+    fi
   done
-  avg=$(awk "BEGIN {printf \"%.3f\", $total/10}")
-  printf '```\n' >> "$OUT"
-  kv "Average" "${avg}s"
+  if [ "$success" -gt 0 ]; then
+    avg=$(awk "BEGIN {printf \"%.3f\", $total/$success}")
+    printf '```\n' >> "$OUT"
+    kv "Average (successful requests)" "${avg}s"
+    kv "Successful / total" "${success} / 10"
+  else
+    printf '```\n' >> "$OUT"
+    kv "Average" "N/A — all requests failed"
+  fi
 done
 
-# --- End-to-end functional test -------------------------------------------
+# ==========================================================================
+# End-to-End Functional Test
+# ==========================================================================
 section "End-to-End Functional Test"
 USER="bench_$(date +%s)"
 printf 'Test user: `%s`\n\n' "$USER" >> "$OUT"
 
-REGISTER_T=$(curl -o /dev/null -s -w '%{time_total}' \
-  -X POST "${BASE}/auth/register" \
+# --- Register -------------------------------------------------------------
+result=$(timed_curl -X POST "${BASE}/auth/register" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USER\",\"password\":\"benchpass123\"}")
-kv "Register latency" "${REGISTER_T}s"
+code_http="${result%|*}"
+t="${result#*|}"
+kv "Register latency" "${t}s (HTTP ${code_http})"
 
-LOGIN_T=$(curl -o /dev/null -s -w '%{time_total}' \
-  -X POST "${BASE}/auth/login" \
+# --- Login ----------------------------------------------------------------
+result=$(timed_curl -X POST "${BASE}/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USER\",\"password\":\"benchpass123\"}")
-kv "Login latency" "${LOGIN_T}s"
+code_http="${result%|*}"
+t="${result#*|}"
+kv "Login latency" "${t}s (HTTP ${code_http})"
 
+# --- Extract token --------------------------------------------------------
 TOKEN=$(curl -s -X POST "${BASE}/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USER\",\"password\":\"benchpass123\"}" | jq -r .token)
 
-ORDER_T=$(curl -o /dev/null -s -w '%{time_total}' \
-  -X POST "${BASE}/orders/" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"item":"bench-widget","quantity":1}')
-kv "Order creation latency" "${ORDER_T}s"
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  kv "Order tests" "SKIPPED — could not obtain auth token"
+else
+  # --- Create order -------------------------------------------------------
+  result=$(timed_curl -X POST "${BASE}/orders/" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{"item":"bench-widget","quantity":1}')
+  code_http="${result%|*}"
+  t="${result#*|}"
+  kv "Order creation latency" "${t}s (HTTP ${code_http})"
 
-LIST_T=$(curl -o /dev/null -s -w '%{time_total}' \
-  "${BASE}/orders/" \
-  -H "Authorization: Bearer $TOKEN")
-kv "Order list latency" "${LIST_T}s"
+  # --- List orders --------------------------------------------------------
+  result=$(timed_curl "${BASE}/orders/" \
+    -H "Authorization: Bearer $TOKEN")
+  code_http="${result%|*}"
+  t="${result#*|}"
+  kv "Order list latency" "${t}s (HTTP ${code_http})"
+fi
 
-# --- Task startup time ----------------------------------------------------
+# ==========================================================================
+# ECS Task Startup Time
+# ==========================================================================
 section "ECS Task Startup Time"
 for svc in auth orders; do
   TASK_ARN=$(aws ecs list-tasks --cluster "$PROJECT" \
@@ -105,7 +174,9 @@ for svc in auth orders; do
     --query 'tasks[0].[createdAt,startedAt,lastStatus,healthStatus]' --output table
 done
 
-# --- Log errors in last hour ---------------------------------------------
+# ==========================================================================
+# Log Errors (last 1 hour)
+# ==========================================================================
 section "Log Errors (last 1 hour)"
 for svc in auth orders; do
   LG=$(aws logs describe-log-groups \
@@ -115,8 +186,8 @@ for svc in auth orders; do
   start_ms=$(( ($(date +%s) - 3600) * 1000 ))
   count=$(aws logs filter-log-events --log-group-name "$LG" \
     --start-time "$start_ms" --filter-pattern "ERROR" \
-    --query 'length(events)' --output text 2>/dev/null)
-  kv "$svc ERROR events" "$count"
+    --query 'length(events)' --output text 2>/dev/null | tr -d '\n' | xargs)
+  kv "$svc ERROR events" "${count:-0}"
 done
 
 echo "✅ Runtime report written to $OUT"
