@@ -23,3 +23,8 @@ variable "services" {
     orders = { port = 5001, priority = 200 }
   }
 }
+
+variable "codestar_connection_arn" {
+  description = "ARN of the CodeStar connection to GitHub"
+  type        = string
+}

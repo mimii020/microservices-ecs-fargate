@@ -1,0 +1,35 @@
+{
+  "family": "auth-service",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/microservices-ecs-fargate-ecs-task-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "auth-service",
+      "image": "<IMAGE1_NAME>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 5000
+        }
+      ],
+      "secrets": [
+        { "name": "DB_USERNAME", "valueFrom": "arn:aws:secretsmanager:us-east-1:590184073845:secret:microservices-ecs-fargate-db-secret-XXXXXX:username::" },
+        { "name": "DB_PASSWORD", "valueFrom": "arn:aws:secretsmanager:us-east-1:590184073845:secret:microservices-ecs-fargate-db-secret-XXXXXX:password::" },
+        { "name": "DB_HOST", "valueFrom": "arn:aws:secretsmanager:us-east-1:590184073845:secret:microservices-ecs-fargate-db-secret-XXXXXX:host::" },
+        { "name": "DB_PORT", "valueFrom": "arn:aws:secretsmanager:us-east-1:590184073845:secret:microservices-ecs-fargate-db-secret-XXXXXX:port::" },
+        { "name": "DB_NAME", "valueFrom": "arn:aws:secretsmanager:us-east-1:590184073845:secret:microservices-ecs-fargate-db-secret-XXXXXX:db_name::" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/microservices-ecs-fargate/auth-service-XXXXXX",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "microservices-ecs-fargate/auth-service"
+        }
+      }
+    }
+  ]
+}

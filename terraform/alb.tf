@@ -59,3 +59,23 @@ resource "aws_lb_listener_rule" "services_rules" {
     }
   }
 }
+
+resource "aws_lb_target_group" "blue_tgs" {
+  for_each = var.services
+  name     = "${each.key}-tg-blue"
+  port     = each.value.port
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.microservices-ecs-vpc.id
+  target_type = "ip"
+  health_check { path = "/health" }
+}
+
+resource "aws_lb_target_group" "green_tgs" {
+  for_each = var.services
+  name     = "${each.key}-tg-green"
+  port     = each.value.port
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.microservices-ecs-vpc.id
+  target_type = "ip"
+  health_check { path = "/health" }
+}

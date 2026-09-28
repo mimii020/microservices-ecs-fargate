@@ -55,14 +55,19 @@ resource "aws_ecs_service" "auth-orders-services" {
   service_registries {
     registry_arn = aws_service_discovery_service.services[each.key].arn
   }
-  
+
   depends_on = [
     aws_lb_listener_rule.services_rules,
     aws_secretsmanager_secret_version.db_secret_version,
   ]
 
-  deployment_maximum_percent         = 100
-  deployment_minimum_healthy_percent = 0
+  deployment_controller {
+    type = "CODE_DEPLOY"
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition, load_balancer, desired_count]
+  }
 
   load_balancer {
     target_group_arn = aws_lb_target_group.tgs[each.key].arn
