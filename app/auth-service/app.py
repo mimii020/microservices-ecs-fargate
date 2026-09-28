@@ -28,7 +28,7 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 
-@app.route("/health", methods=["GET"])
+@auth.route("/health", methods=["GET"])
 def health():
     return jsonify(status="ok", service="auth"), 200
 

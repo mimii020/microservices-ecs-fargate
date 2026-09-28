@@ -20,7 +20,7 @@ resource "aws_lb_target_group" "tgs" {
   deregistration_delay = 30
 
   health_check {
-    path = "/health"
+    path = "/${each.key}/health"
   }
 
   tags = {

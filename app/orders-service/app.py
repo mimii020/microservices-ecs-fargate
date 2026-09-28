@@ -68,7 +68,7 @@ def order_to_dict(order: Order) -> dict:
     }
 
 
-@app.route("/health", methods=["GET"])
+@orders.route("/health", methods=["GET"])
 def health():
     return jsonify(status="ok", service="orders"), 200
 
