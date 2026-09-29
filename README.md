@@ -7,34 +7,8 @@ secrets injected at runtime, and measured observability.
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    Client((Internet Client))
-    IGW[Internet Gateway]
-    ALB["Application Load Balancer<br/>public subnets · 2 AZs"]
-    NAT["NAT Gateway<br/>single AZ (cost trade-off)"]
+![Microservices on ECS Fargate architecture](docs/architecture.png)
 
-    subgraph VPC["VPC — 10.0.0.0/16"]
-        direction TB
-        AuthTask["Auth Service<br/>Fargate · private · :5000"]
-        OrdersTask["Orders Service<br/>Fargate · private · :5001"]
-        RDS[("RDS PostgreSQL<br/>db.t3.micro · private")]
-    end
-
-    CM["Cloud Map<br/>internal.microservices-ecs-fargate.local"]
-    AWS["AWS APIs<br/>ECR · Secrets Manager · CloudWatch Logs"]
-
-    Client --> IGW --> ALB
-    ALB -->|"/auth/*"| AuthTask
-    ALB -->|"/orders/*"| OrdersTask
-    OrdersTask -.->|"DNS lookup"| CM
-    OrdersTask -->|"HTTP /auth/verify"| AuthTask
-    AuthTask --> RDS
-    OrdersTask --> RDS
-    AuthTask -.->|"HTTPS 443"| NAT
-    OrdersTask -.->|"HTTPS 443"| NAT
-    NAT --> AWS
-```
 
 The ALB spans both public subnets (one per AZ). Both ECS tasks and the
 RDS instance live in private subnets with no public IP. Outbound traffic
